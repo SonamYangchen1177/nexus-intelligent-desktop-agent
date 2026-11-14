@@ -1,63 +1,130 @@
 
-from agent.verifier import ExecutionVerifier
 from agent.recovery import ErrorRecovery
 
 
-def main():
+def test_classify_file_not_found():
 
-    verifier = ExecutionVerifier()
-    recovery = ErrorRecovery(max_retries=2)
+    recovery = ErrorRecovery()
 
-    print("\nTESTING VERIFICATION")
-    print("=" * 40)
-
-    result = {
-        "success": True,
-        "message": "Folder created successfully.",
-        "path": "workspace/test_project"
-    }
-
-    verification = verifier.verify(
-        "create_folder",
-        result
+    result = recovery.classify_error(
+        FileNotFoundError("File not found")
     )
 
-    print("Verification:", verification)
+    assert result == "FILE_NOT_FOUND"
 
-    print("\nTESTING ERROR CLASSIFICATION")
-    print("=" * 40)
 
-    errors = [
-        FileNotFoundError("File not found"),
-        FileExistsError("File already exists"),
-        PermissionError("Permission denied"),
+def test_classify_file_already_exists():
+
+    recovery = ErrorRecovery()
+
+    result = recovery.classify_error(
+        FileExistsError("File already exists")
+    )
+
+    assert result == "FILE_ALREADY_EXISTS"
+
+
+def test_classify_permission_error():
+
+    recovery = ErrorRecovery()
+
+    result = recovery.classify_error(
+        PermissionError("Permission denied")
+    )
+
+    assert result == "PERMISSION_ERROR"
+
+
+def test_classify_safety_violation():
+
+    recovery = ErrorRecovery()
+
+    error = Exception(
+        "Path is outside the approved workspace"
+    )
+
+    result = recovery.classify_error(error)
+
+    assert result == "SAFETY_VIOLATION"
+
+
+def test_classify_timeout():
+
+    recovery = ErrorRecovery()
+
+    result = recovery.classify_error(
         TimeoutError("Request timeout")
-    ]
+    )
 
-    for error in errors:
+    assert result == "TIMEOUT"
 
-        error_type = recovery.classify_error(error)
 
-        print(
-            f"{error}: {error_type}"
-        )
+def test_classify_unknown_error():
 
-    print("\nTESTING RETRY DECISIONS")
-    print("=" * 40)
+    recovery = ErrorRecovery()
+
+    result = recovery.classify_error(
+        Exception("Unexpected issue")
+    )
+
+    assert result == "UNKNOWN_ERROR"
+
+
+def test_retry_timeout_before_maximum_attempt():
+
+    recovery = ErrorRecovery(max_retries=2)
 
     error = TimeoutError("Request timeout")
 
-    for attempt in range(1, 4):
-
-        retry = recovery.should_retry(
-            error,
-            attempt
-        )
-
-        print(
-            f"Attempt {attempt}: Retry = {retry}"
-        )
+    assert recovery.should_retry(
+        error,
+        1
+    ) is True
 
 
-if __name__ == "__main__":
-    main()
+def test_no_retry_after_maximum_attempt():
+
+    recovery = ErrorRecovery(max_retries=2)
+
+    error = TimeoutError("Request timeout")
+
+    assert recovery.should_retry(
+        error,
+        2
+    ) is False
+
+
+def test_file_not_found_is_not_retryable():
+
+    recovery = ErrorRecovery(max_retries=2)
+
+    error = FileNotFoundError("File not found")
+
+    assert recovery.should_retry(
+        error,
+        1
+    ) is False
+
+
+def test_permission_error_is_not_retryable():
+
+    recovery = ErrorRecovery(max_retries=2)
+
+    error = PermissionError("Permission denied")
+
+    assert recovery.should_retry(
+        error,
+        1
+    ) is False
+
+
+def test_unknown_error_can_be_retried():
+
+    recovery = ErrorRecovery(max_retries=3)
+
+    error = Exception("Unexpected issue")
+
+    assert recovery.should_retry(
+        error,
+        1
+    ) is True

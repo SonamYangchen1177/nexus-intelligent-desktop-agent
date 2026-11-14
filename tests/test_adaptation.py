@@ -1,74 +1,127 @@
 
-from pathlib import Path
-
 from agent.adaptation import AdaptiveBehaviour
-from memory.episodic import EpisodicMemory
-from config import WORKSPACE
 
 
-def main():
+def test_existing_folder_is_adapted(tmp_path):
 
     adaptive = AdaptiveBehaviour()
-    memory = EpisodicMemory()
+
+    folder = tmp_path / "test_project"
+    folder.mkdir()
+
+    original_result = {
+        "success": False,
+        "message": "Folder already exists.",
+        "path": str(folder)
+    }
+
+    result = adaptive.adapt_result(
+        "create_folder",
+        original_result
+    )
+
+    assert result["success"] is True
+    assert result["adapted"] is True
+    assert result["path"] == str(folder)
+    assert "already existed" in result["message"]
+
+
+def test_non_existing_folder_is_not_adapted(tmp_path):
+
+    adaptive = AdaptiveBehaviour()
+
+    folder = tmp_path / "missing_folder"
+
+    original_result = {
+        "success": False,
+        "message": "Folder already exists.",
+        "path": str(folder)
+    }
+
+    result = adaptive.adapt_result(
+        "create_folder",
+        original_result
+    )
+
+    assert result == original_result
+    assert result["success"] is False
+
+
+def test_unrelated_tool_result_remains_unchanged():
+
+    adaptive = AdaptiveBehaviour()
+
+    original_result = {
+        "success": True,
+        "message": "Search completed."
+    }
+
+    result = adaptive.adapt_result(
+        "search_files",
+        original_result
+    )
+
+    assert result == original_result
+
+
+def test_feedback_processing():
+
+    adaptive = AdaptiveBehaviour()
+
+    result = adaptive.process_feedback(
+        "  Do not recreate existing folders.  "
+    )
+
+    assert result["status"] == "recorded"
+
+    assert result["feedback"] == (
+        "Do not recreate existing folders."
+    )
+
+
+def test_empty_feedback_raises_error():
+
+    adaptive = AdaptiveBehaviour()
 
     try:
+        adaptive.process_feedback("   ")
+        assert False, "Expected ValueError"
 
-        print("\nTESTING ADAPTIVE BEHAVIOUR")
-        print("=" * 45)
+    except ValueError as error:
+        assert "Feedback cannot be empty" in str(error)
 
-        # Test 1: Existing folder
-        folder = WORKSPACE / "test_project"
-        folder.mkdir(exist_ok=True)
 
-        original_result = {
-            "success": False,
-            "message": "Folder already exists.",
-            "path": str(folder)
+def test_guidance_without_failures():
+
+    adaptive = AdaptiveBehaviour()
+
+    guidance = adaptive.generate_guidance([])
+
+    assert "No previous failures" in guidance
+
+
+def test_guidance_from_failed_experience():
+
+    adaptive = AdaptiveBehaviour()
+
+    experiences = [
+        {
+            "goal": "Create an existing folder",
+            "status": "failed",
+            "execution_history": [
+                {
+                    "status": "failed",
+                    "result": {
+                        "message": "Folder already exists."
+                    }
+                }
+            ]
         }
+    ]
 
-        adapted_result = adaptive.adapt_result(
-            "create_folder",
-            original_result
-        )
+    guidance = adaptive.generate_guidance(
+        experiences
+    )
 
-        print("\nExisting folder adaptation:")
-        print(adapted_result)
-
-        # Test 2: Feedback processing
-        feedback = adaptive.process_feedback(
-            "Do not recreate folders that already exist."
-        )
-
-        memory.save_feedback(
-            feedback["feedback"]
-        )
-
-        print("\nSaved feedback:")
-        print(feedback)
-
-        # Test 3: Retrieve feedback
-        print("\nRetrieved feedback:")
-
-        for item in memory.get_recent_feedback():
-            print(item)
-
-        # Test 4: Previous experience guidance
-        experiences = memory.get_recent_experiences(
-            limit=5
-        )
-
-        guidance = adaptive.generate_guidance(
-            experiences
-        )
-
-        print("\nAdaptive guidance:")
-        print(guidance)
-
-        print("\nADAPTATION TEST COMPLETED")
-
-    finally:
-        memory.close()
-
-
-if __name__ == "__main__":
-    main()
+    assert "Create an existing folder" in guidance
+    assert "Folder already exists" in guidance
