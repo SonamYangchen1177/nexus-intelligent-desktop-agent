@@ -7,7 +7,7 @@ from tools import file_search
 from tools import folder_manager
 from tools import file_manager
 from tools import report_generator
-
+from safety import guardrails
 
 # --------------------------------------------------
 # TEST PATH SETUP
@@ -367,3 +367,61 @@ def test_generate_report_does_not_overwrite(tool_workspace):
     assert report_path.read_text(
         encoding="utf-8"
     ) == "Original report"
+def test_search_files_ignores_external_symbolic_link(
+    tool_workspace,
+    monkeypatch
+):
+    """
+    Ensure search does not expose files linked from
+    outside the approved workspace.
+    """
+
+    # Use the real guardrail validator for this test.
+    monkeypatch.setattr(
+        guardrails,
+        "WORKSPACE",
+        tool_workspace
+    )
+
+    monkeypatch.setattr(
+        file_search,
+        "validate_path",
+        guardrails.validate_path
+    )
+
+    # Create a file outside the workspace.
+    outside_folder = tool_workspace.parent / (
+        f"{tool_workspace.name}_outside"
+    )
+    outside_folder.mkdir()
+
+    outside_file = outside_folder / "secret.txt"
+    outside_file.write_text(
+        "Sensitive external content",
+        encoding="utf-8"
+    )
+
+    # Create a symbolic link inside the workspace.
+    link = tool_workspace / "external_secret.txt"
+
+    try:
+        link.symlink_to(outside_file)
+
+    except (OSError, NotImplementedError):
+        pytest.skip(
+            "Symbolic link creation is not permitted."
+        )
+
+    # Search the workspace.
+    results = file_search.search_files()
+
+    # The external file must not appear in results.
+    assert all(
+        result["name"] != "external_secret.txt"
+        for result in results
+    )
+
+    assert all(
+        result["name"] != "secret.txt"
+        for result in results
+    )
