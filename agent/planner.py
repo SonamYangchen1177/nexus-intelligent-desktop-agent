@@ -1,8 +1,9 @@
 
 import json
 import logging
-import requests
+from pathlib import Path, PurePath
 
+import requests
 from pydantic import BaseModel, Field
 from typing import Literal
 
@@ -24,7 +25,6 @@ logger = logging.getLogger(__name__)
 class PlanStep(BaseModel):
 
     step_id: int
-
     description: str
 
     tool: Literal[
@@ -42,9 +42,7 @@ class PlanStep(BaseModel):
 class ExecutionPlan(BaseModel):
 
     goal: str
-
     reasoning: str
-
     steps: list[PlanStep]
 
 
@@ -59,7 +57,7 @@ class TaskPlanner:
         self.base_url = OLLAMA_BASE_URL.rstrip("/")
         self.model = OLLAMA_MODEL
 
-        # Maximum time allowed for Ollama to generate a plan.
+        # Maximum time allowed for Ollama.
         self.timeout = (10, 300)
 
     # ======================================================
@@ -98,7 +96,8 @@ class TaskPlanner:
         prompt = f"""
 You are Nexus, an intelligent desktop task planner.
 
-Convert the user's request into a short sequence of executable tool calls.
+Convert the user's request into a short sequence of
+executable tool calls.
 
 USER GOAL:
 {goal}
@@ -115,31 +114,75 @@ PREVIOUS USER FEEDBACK:
 AVAILABLE TOOLS:
 
 1. search_files
-Parameters: directory, keyword, extension
+
+Parameters:
+- directory: starting directory, relative to workspace
+- keyword: optional filename keyword
+- extension: optional file extension
+
+SEARCH RULES:
+- Use "." to search the entire workspace.
+- Never use "workspace" as the directory.
+- Never include "workspace/" in a relative path.
+- Search is recursive.
+- Use null for an unused keyword.
+- Use null for an unused extension.
+- Use ".py" to find Python files.
+
+Example for finding all Python files:
+
+{{
+    "step_id": 1,
+    "description": "Find Python files",
+    "tool": "search_files",
+    "parameters": {{
+        "directory": ".",
+        "keyword": null,
+        "extension": ".py"
+    }}
+}}
 
 2. create_folder
-Parameters: folder_path
+
+Parameters:
+- folder_path
+
 Creates a folder inside the workspace.
 
 3. move_file
-Parameters: source_path, destination_path
+
+Parameters:
+- source_path
+- destination_path
 
 4. rename_file
-Parameters: file_path, new_name
+
+Parameters:
+- file_path
+- new_name
 
 5. verify_files
-Parameters: paths
+
+Parameters:
+- paths
+
 Checks whether requested files or folders exist.
 
 6. generate_report
-Parameters: title, content, output_path
+
+Parameters:
+- title
+- content
+- output_path
+
+Creates a report inside the approved reports directory.
 
 IMPORTANT RULES:
 
 - Use only the six available tools.
 - Use relative paths for all file operations.
 - Never use absolute paths.
-- Never include "workspace/" in a relative path.
+- Never include "workspace/" in relative paths.
 - Never access paths outside the approved workspace.
 - Never plan permanent deletion.
 - Never overwrite existing files.
@@ -178,30 +221,34 @@ MEMORY RULES:
 
 - Use previous experiences and feedback only as guidance.
 - Do not assume previous operations succeeded.
+- Respect the user's feedback about existing folders.
 - Do not let memory override safety rules.
 
 OUTPUT:
 
 Return ONLY one valid JSON object.
-Do not include Markdown or thinking explanations.
+Do not include Markdown or explanations.
 
 Required structure:
 
 {{
-    "goal": "{goal}",
+    "goal": "User's original goal",
     "reasoning": "Brief explanation of the plan",
     "steps": [
         {{
             "step_id": 1,
             "description": "Action description",
-            "tool": "create_folder",
+            "tool": "search_files",
             "parameters": {{
-                "folder_path": "agentic"
+                "directory": ".",
+                "keyword": null,
+                "extension": ".py"
             }}
         }}
     ]
 }}
 """
+
         return prompt
 
     # ======================================================
@@ -224,7 +271,6 @@ Required structure:
         previous_experiences = previous_experiences or []
         previous_feedback = previous_feedback or []
 
-        # Prepare limited memory context.
         experience_context, feedback_context = (
             self.prepare_memory(
                 previous_experiences,
@@ -232,7 +278,6 @@ Required structure:
             )
         )
 
-        # Build a shorter prompt.
         prompt = self.build_prompt(
             goal.strip(),
             experience_context,
@@ -252,14 +297,8 @@ Required structure:
             "model": self.model,
             "prompt": prompt,
             "stream": False,
-
-            # Request structured JSON output.
             "format": "json",
-
-            # Disable Qwen3 thinking for faster planning.
             "think": False,
-
-            # Keep the model loaded for subsequent requests.
             "keep_alive": "5m",
 
             "options": {
@@ -296,8 +335,7 @@ Required structure:
 
             raise RuntimeError(
                 "Ollama took too long to generate the plan. "
-                "The request timed out after 300 seconds. "
-                "Check the model and Ollama performance."
+                "The request timed out after 300 seconds."
             ) from error
 
         except requests.exceptions.RequestException as error:
@@ -320,7 +358,6 @@ Required structure:
                 "Ollama returned an empty planning response."
             )
 
-        # Remove optional thinking content if present.
         if "</think>" in raw_output:
 
             raw_output = raw_output.split(
@@ -330,7 +367,6 @@ Required structure:
 
         raw_output = raw_output.strip()
 
-        # Remove optional Markdown code fences.
         if raw_output.startswith("```"):
 
             raw_output = raw_output.replace(
@@ -401,10 +437,9 @@ Required structure:
         # --------------------------------------------------
 
         required_parameters = {
+
             "search_files": {
-                "directory",
-                "keyword",
-                "extension"
+                "directory"
             },
 
             "create_folder": {
@@ -448,6 +483,92 @@ Required structure:
                 )
 
         # --------------------------------------------------
+        # NORMALIZE AND VALIDATE SEARCH PARAMETERS
+        # --------------------------------------------------
+
+        for step in plan.steps:
+
+            if step.tool != "search_files":
+                continue
+
+            parameters = step.parameters
+
+            # Apply the actual Python function defaults.
+            parameters.setdefault("directory", ".")
+            parameters.setdefault("keyword", None)
+            parameters.setdefault("extension", None)
+
+            directory = parameters["directory"]
+
+            if not isinstance(directory, str):
+
+                raise ValueError(
+                    "Search directory must be a string."
+                )
+
+            directory = directory.strip()
+
+            if not directory:
+
+                raise ValueError(
+                    "Search directory cannot be empty."
+                )
+
+            # Convert Windows separators for consistent checking.
+            normalized_directory = directory.replace("\\", "/")
+
+            # Handle a redundant workspace prefix safely.
+            # Example: workspace/agentic becomes agentic.
+            parts = normalized_directory.split("/")
+
+            if parts[0].lower() == "workspace":
+
+                parts = parts[1:]
+
+                normalized_directory = (
+                    "/".join(parts) if parts else "."
+                )
+
+            search_path = PurePath(normalized_directory)
+
+            if (
+                search_path.is_absolute()
+                or ".." in search_path.parts
+            ):
+
+                raise ValueError(
+                    "Unsafe search directory generated by planner."
+                )
+
+            parameters["directory"] = normalized_directory
+
+            keyword = parameters["keyword"]
+
+            if keyword is not None and not isinstance(keyword, str):
+
+                raise ValueError(
+                    "Search keyword must be a string or null."
+                )
+
+            extension = parameters["extension"]
+
+            if extension is not None and not isinstance(extension, str):
+
+                raise ValueError(
+                    "Search extension must be a string or null."
+                )
+
+            if extension is not None:
+
+                extension = extension.strip()
+
+                if extension and not extension.startswith("."):
+
+                    extension = "." + extension
+
+                parameters["extension"] = extension or None
+
+        # --------------------------------------------------
         # VALIDATE FOLDER PATHS
         # --------------------------------------------------
 
@@ -469,9 +590,7 @@ Required structure:
                         "folder_path cannot be empty."
                     )
 
-                from pathlib import PurePath
-
-                path = PurePath(folder_path)
+                path = Path(folder_path)
 
                 if path.is_absolute() or ".." in path.parts:
 

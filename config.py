@@ -14,7 +14,7 @@ REPORT_DIR = BASE_DIR / "reports"
 
 # Ollama configuration
 OLLAMA_BASE_URL = "http://localhost:11434"
-OLLAMA_MODEL = "qwen3:8b"
+OLLAMA_MODEL = "qwen3:4b"
 
 # Agent configuration
 MAX_RETRIES = 2

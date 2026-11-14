@@ -1,6 +1,6 @@
-
 import json
 import time
+import logging
 
 from pathlib import Path
 from datetime import datetime
@@ -22,17 +22,29 @@ from evaluation.metrics import (
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-TEST_CASES_PATH = BASE_DIR / "evaluation" / "test_cases.json"
-RESULTS_PATH = BASE_DIR / "evaluation" / "results.json"
-CHART_PATH = BASE_DIR / "reports" / "evaluation_metrics.png"
+TEST_CASES_PATH = (
+    BASE_DIR / "evaluation" / "test_cases.json"
+)
+
+RESULTS_PATH = (
+    BASE_DIR / "evaluation" / "results.json"
+)
+
+CHART_PATH = (
+    BASE_DIR / "reports" / "evaluation_metrics.png"
+)
 
 BASE_DIR.joinpath("reports").mkdir(
     parents=True,
     exist_ok=True
 )
 
-# Set to 2 for initial testing.
-# Change to None to evaluate all scenarios.
+logger = logging.getLogger(__name__)
+
+# Keep this at 2 while testing.
+# Increase it after confirming that repeated evaluations
+# do not interfere with existing workspace files.
+
 TEST_LIMIT = 2
 
 
@@ -41,6 +53,12 @@ TEST_LIMIT = 2
 # ==========================================================
 
 def load_test_cases():
+    """Load evaluation scenarios from the JSON file."""
+
+    if not TEST_CASES_PATH.exists():
+        raise FileNotFoundError(
+            f"Test cases file not found: {TEST_CASES_PATH}"
+        )
 
     with open(
         TEST_CASES_PATH,
@@ -48,11 +66,86 @@ def load_test_cases():
         encoding="utf-8"
     ) as file:
 
-        return json.load(file)
+        test_cases = json.load(file)
+
+    if not isinstance(test_cases, list):
+        raise ValueError(
+            "Test cases must be stored as a JSON list."
+        )
+
+    return test_cases
 
 
 # ==========================================================
-# 3. RUN AGENT EVALUATION
+# 3. EXTRACT EXECUTION INFORMATION
+# ==========================================================
+
+def extract_execution_steps(execution_history):
+    """
+    Extract relevant information from the actual
+    AgentController execution history.
+    """
+
+    evaluated_steps = []
+
+    for step in execution_history:
+
+        verification = step.get(
+            "verification",
+            {}
+        )
+
+        attempts = step.get("attempts", 1)
+
+        status = step.get(
+            "status",
+            "failed"
+        )
+
+        evaluated_steps.append({
+
+            "step_id": step.get("step_id"),
+
+            "tool": step.get(
+                "tool",
+                "unknown"
+            ),
+
+            "status": status,
+
+            "attempts": attempts,
+
+            "verified": (
+                verification.get("verified") is True
+            ),
+
+            "verification_message": (
+                verification.get("message", "")
+            ),
+
+            # A retry indicates that an earlier attempt failed.
+            "initial_failure": attempts > 1,
+
+            # The retried step recovered if it eventually succeeded.
+            "recovered": (
+                attempts > 1
+                and status == "success"
+            ),
+
+            "error": step.get(
+                "result",
+                {}
+            ).get("error")
+            if isinstance(step.get("result"), dict)
+            else None
+
+        })
+
+    return evaluated_steps
+
+
+# ==========================================================
+# 4. RUN AGENT EVALUATION
 # ==========================================================
 
 def run_evaluation():
@@ -67,8 +160,8 @@ def run_evaluation():
 
     evaluation_records = []
 
-    print("\nDESKTOP AGENT EVALUATION")
-    print("=" * 55)
+    print("\nNEXUS DESKTOP AGENT EVALUATION")
+    print("=" * 60)
 
     print("Total test cases:", len(test_cases))
 
@@ -79,43 +172,50 @@ def run_evaluation():
             start=1
         ):
 
-            print("\n" + "=" * 55)
+            print("\n" + "=" * 60)
 
             print(
                 f"TEST CASE {index}/{len(test_cases)}"
             )
 
+            print("Test ID:", test_case.get("id"))
             print("Goal:", test_case["goal"])
 
             start_time = time.perf_counter()
 
             predicted_tools = []
+            evaluated_steps = []
+
             selection_accuracy = 0.0
             task_status = "failed"
-            evaluated_steps = []
+            error_message = None
+
+            execution_history = []
+
+            expected_tools = test_case.get(
+                "expected_tools",
+                []
+            )
 
             try:
 
                 # --------------------------------------------------
-                # Generate an execution plan using the LLM
+                # 1. GENERATE EXECUTION PLAN
                 # --------------------------------------------------
+
+                print("\nGenerating execution plan...")
 
                 plan = planner.create_plan(
                     test_case["goal"]
                 )
 
-                # Extract tools selected by the planner
                 predicted_tools = [
                     step.tool
                     for step in plan.steps
                 ]
 
-                expected_tools = test_case[
-                    "expected_tools"
-                ]
-
                 # --------------------------------------------------
-                # Evaluate tool selection
+                # 2. EVALUATE TOOL SELECTION
                 # --------------------------------------------------
 
                 selection_accuracy = (
@@ -141,90 +241,96 @@ def run_evaluation():
                 )
 
                 # --------------------------------------------------
-                # Execute the generated plan
+                # 3. EXECUTE THE PLAN
                 # --------------------------------------------------
+
+                print("\nExecuting agent plan...")
 
                 execution_result = controller.execute_plan(
                     plan
                 )
 
-                # AgentController returns a dictionary.
-                # Extract the execution history from that dictionary.
+                # --------------------------------------------------
+                # 4. EXTRACT ACTUAL CONTROLLER RESULT
+                # --------------------------------------------------
 
-                if isinstance(execution_result, dict):
+                if not isinstance(execution_result, dict):
 
-                    execution_history = execution_result.get(
-                        "execution_history",
-                        []
+                    raise TypeError(
+                        "AgentController returned an unexpected "
+                        "execution result. Expected a dictionary."
                     )
 
-                    task_status = execution_result.get(
-                        "overall_status",
-                        "failed"
-                    )
+                execution_history = execution_result.get(
+                    "execution_history",
+                    []
+                )
 
-                else:
+                # Use the actual overall status.
+                # AgentController already checks execution
+                # and verification before returning this value.
 
-                    # Backward compatibility if a list is returned.
-                    execution_history = execution_result
+                task_status = execution_result.get(
+                    "overall_status",
+                    "failed"
+                )
+
+                if task_status not in ["success", "failed"]:
 
                     task_status = "failed"
 
-                # Confirm task success using actual step outcomes.
-                # Do not mark an incomplete plan as successful.
-
-                task_status = (
-                    "success"
-                    if (
-                        len(execution_history) == len(plan.steps)
-                        and len(execution_history) > 0
-                        and all(
-                            step.get("status") == "success"
-                            for step in execution_history
-                        )
+                    error_message = (
+                        "AgentController returned an invalid "
+                        "overall task status."
                     )
-                    else "failed"
+
+                # --------------------------------------------------
+                # 5. EXTRACT VERIFICATION AND RECOVERY DATA
+                # --------------------------------------------------
+
+                evaluated_steps = extract_execution_steps(
+                    execution_history
                 )
 
-                # --------------------------------------------------
-                # Extract verification and recovery information
-                # --------------------------------------------------
+                print(
+                    "\nCompleted steps:",
+                    execution_result.get(
+                        "completed_steps",
+                        0
+                    )
+                )
 
-                for step in execution_history:
+                print(
+                    "Failed steps:",
+                    execution_result.get(
+                        "failed_steps",
+                        0
+                    )
+                )
 
-                    attempts = step.get("attempts", 1)
-
-                    evaluated_steps.append({
-
-                        "tool": step.get("tool", "unknown"),
-
-                        "verified": step.get(
-                            "verification", {}
-                        ).get("verified", False),
-
-                        "initial_failure": (
-                            attempts > 1
-                            or step.get("status") == "failed"
-                        ),
-
-                        "recovered": (
-                            attempts > 1
-                            and step.get("status") == "success"
-                        )
-
-                    })
+                print(
+                    "Overall agent status:",
+                    task_status
+                )
 
             except Exception as error:
 
-                print(
-                    "Evaluation error:",
-                    str(error)
-                )
+                error_message = str(error)
 
                 task_status = "failed"
 
+                logger.exception(
+                    "Evaluation failed for test case %s",
+                    test_case.get("id")
+                )
+
+                print(
+                    "\nEvaluation error:",
+                    error_message
+                )
+
             # ------------------------------------------------------
-            # Calculate execution duration
+            # 6. CALCULATE EXECUTION DURATION
             # ------------------------------------------------------
 
             duration = (
@@ -232,18 +338,16 @@ def run_evaluation():
             )
 
             # ------------------------------------------------------
-            # Store evaluation record
+            # 7. STORE EVALUATION RECORD
             # ------------------------------------------------------
 
             record = {
 
-                "test_id": test_case["id"],
+                "test_id": test_case.get("id"),
 
                 "goal": test_case["goal"],
 
-                "expected_tools": test_case[
-                    "expected_tools"
-                ],
+                "expected_tools": expected_tools,
 
                 "predicted_tools": predicted_tools,
 
@@ -258,11 +362,16 @@ def run_evaluation():
                     2
                 ),
 
+                "error": error_message,
+
                 "steps": evaluated_steps
 
             }
 
             evaluation_records.append(record)
+
+            print("\nTEST CASE RESULT")
+            print("-" * 40)
 
             print("Task status:", task_status)
 
@@ -271,12 +380,17 @@ def run_evaluation():
                 f"{duration:.2f} seconds"
             )
 
+            print(
+                "Recorded steps:",
+                len(evaluated_steps)
+            )
+
     finally:
 
         controller.close()
 
     # ==========================================================
-    # 4. CALCULATE PERFORMANCE METRICS
+    # 5. CALCULATE PERFORMANCE METRICS
     # ==========================================================
 
     metrics = calculate_metrics(
@@ -284,10 +398,12 @@ def run_evaluation():
     )
 
     # ==========================================================
-    # 5. PREPARE EVALUATION REPORT
+    # 6. PREPARE EVALUATION REPORT
     # ==========================================================
 
     evaluation_report = {
+
+        "project": "Nexus Intelligent Desktop Agent",
 
         "evaluation_date": datetime.now().isoformat(),
 
@@ -304,7 +420,7 @@ def run_evaluation():
     }
 
     # ==========================================================
-    # 6. SAVE RESULTS AS JSON
+    # 7. SAVE RESULTS AS JSON
     # ==========================================================
 
     with open(
@@ -320,15 +436,28 @@ def run_evaluation():
         )
 
     # ==========================================================
-    # 7. DISPLAY EVALUATION SUMMARY
+    # 8. DISPLAY EVALUATION SUMMARY
     # ==========================================================
 
     print("\nEVALUATION SUMMARY")
-    print("=" * 55)
+    print("=" * 60)
+
+    percentage_metrics = [
+        "task_success_rate",
+        "tool_selection_accuracy",
+        "verification_accuracy",
+        "recovery_rate"
+    ]
 
     for metric, value in metrics.items():
 
-        if metric == "average_execution_time":
+        if metric in percentage_metrics:
+
+            print(
+                f"{metric}: {value * 100:.2f}%"
+            )
+
+        elif metric == "average_execution_time":
 
             print(
                 f"{metric}: {value:.2f} seconds"
@@ -337,14 +466,14 @@ def run_evaluation():
         else:
 
             print(
-                f"{metric}: {value * 100:.2f}%"
+                f"{metric}: {value}"
             )
 
     print("\nResults saved to:")
     print(RESULTS_PATH)
 
     # ==========================================================
-    # 8. GENERATE PERFORMANCE CHART
+    # 9. GENERATE PERFORMANCE CHART
     # ==========================================================
 
     generate_chart(metrics)
@@ -353,10 +482,14 @@ def run_evaluation():
 
 
 # ==========================================================
-# 9. GENERATE PERFORMANCE VISUALIZATION
+# 10. GENERATE PERFORMANCE VISUALIZATION
 # ==========================================================
 
 def generate_chart(metrics):
+    """
+    Generate a bar chart showing the main
+    performance metrics of Nexus.
+    """
 
     chart_metrics = {
 
@@ -412,7 +545,7 @@ def generate_chart(metrics):
 
 
 # ==========================================================
-# 10. MAIN ENTRY POINT
+# 11. MAIN ENTRY POINT
 # ==========================================================
 
 if __name__ == "__main__":

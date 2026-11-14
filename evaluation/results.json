@@ -1,13 +1,18 @@
 {
-    "evaluation_date": "2026-11-14T13:49:42.053542",
+    "project": "Nexus Intelligent Desktop Agent",
+    "evaluation_date": "2026-11-14T15:15:23.501965",
     "total_test_cases": 2,
     "completed_test_cases": 2,
     "metrics": {
-        "task_success_rate": 1.0,
-        "tool_selection_accuracy": 1.0,
+        "task_success_rate": 0.5,
+        "tool_selection_accuracy": 0.5,
         "verification_accuracy": 1.0,
         "recovery_rate": 0.0,
-        "average_execution_time": 137.56
+        "average_execution_time": 276.74,
+        "total_executed_steps": 1,
+        "verified_steps": 1,
+        "recovery_opportunities": 0,
+        "recovered_steps": 0
     },
     "results": [
         {
@@ -16,20 +21,12 @@
             "expected_tools": [
                 "search_files"
             ],
-            "predicted_tools": [
-                "search_files"
-            ],
-            "tool_selection_accuracy": 1.0,
-            "status": "success",
-            "duration_seconds": 140.66,
-            "steps": [
-                {
-                    "tool": "search_files",
-                    "verified": true,
-                    "initial_failure": false,
-                    "recovered": false
-                }
-            ]
+            "predicted_tools": [],
+            "tool_selection_accuracy": 0.0,
+            "status": "failed",
+            "duration_seconds": 310.33,
+            "error": "Ollama took too long to generate the plan. The request timed out after 300 seconds. Check the model and Ollama performance.",
+            "steps": []
         },
         {
             "test_id": 2,
@@ -42,13 +39,19 @@
             ],
             "tool_selection_accuracy": 1.0,
             "status": "success",
-            "duration_seconds": 134.46,
+            "duration_seconds": 243.15,
+            "error": null,
             "steps": [
                 {
+                    "step_id": 1,
                     "tool": "search_files",
+                    "status": "success",
+                    "attempts": 1,
                     "verified": true,
+                    "verification_message": "Search completed. Found 0 items.",
                     "initial_failure": false,
-                    "recovered": false
+                    "recovered": false,
+                    "error": null
                 }
             ]
         }
