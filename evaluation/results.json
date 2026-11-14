@@ -1,0 +1,56 @@
+{
+    "evaluation_date": "2026-11-14T13:49:42.053542",
+    "total_test_cases": 2,
+    "completed_test_cases": 2,
+    "metrics": {
+        "task_success_rate": 1.0,
+        "tool_selection_accuracy": 1.0,
+        "verification_accuracy": 1.0,
+        "recovery_rate": 0.0,
+        "average_execution_time": 137.56
+    },
+    "results": [
+        {
+            "test_id": 1,
+            "goal": "Find all files in the workspace.",
+            "expected_tools": [
+                "search_files"
+            ],
+            "predicted_tools": [
+                "search_files"
+            ],
+            "tool_selection_accuracy": 1.0,
+            "status": "success",
+            "duration_seconds": 140.66,
+            "steps": [
+                {
+                    "tool": "search_files",
+                    "verified": true,
+                    "initial_failure": false,
+                    "recovered": false
+                }
+            ]
+        },
+        {
+            "test_id": 2,
+            "goal": "Find all Python files in the workspace.",
+            "expected_tools": [
+                "search_files"
+            ],
+            "predicted_tools": [
+                "search_files"
+            ],
+            "tool_selection_accuracy": 1.0,
+            "status": "success",
+            "duration_seconds": 134.46,
+            "steps": [
+                {
+                    "tool": "search_files",
+                    "verified": true,
+                    "initial_failure": false,
+                    "recovered": false
+                }
+            ]
+        }
+    ]
+}

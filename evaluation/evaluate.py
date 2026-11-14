@@ -16,7 +16,10 @@ from evaluation.metrics import (
 )
 
 
-# Project paths
+# ==========================================================
+# 1. PROJECT PATHS AND CONFIGURATION
+# ==========================================================
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 TEST_CASES_PATH = BASE_DIR / "evaluation" / "test_cases.json"
@@ -28,11 +31,14 @@ BASE_DIR.joinpath("reports").mkdir(
     exist_ok=True
 )
 
-
 # Set to 2 for initial testing.
 # Change to None to evaluate all scenarios.
 TEST_LIMIT = 2
 
+
+# ==========================================================
+# 2. LOAD TEST CASES
+# ==========================================================
 
 def load_test_cases():
 
@@ -44,6 +50,10 @@ def load_test_cases():
 
         return json.load(file)
 
+
+# ==========================================================
+# 3. RUN AGENT EVALUATION
+# ==========================================================
 
 def run_evaluation():
 
@@ -86,12 +96,15 @@ def run_evaluation():
 
             try:
 
-                # Generate plan using the LLM
+                # --------------------------------------------------
+                # Generate an execution plan using the LLM
+                # --------------------------------------------------
+
                 plan = planner.create_plan(
                     test_case["goal"]
                 )
 
-                # Extract selected tools
+                # Extract tools selected by the planner
                 predicted_tools = [
                     step.tool
                     for step in plan.steps
@@ -101,7 +114,10 @@ def run_evaluation():
                     "expected_tools"
                 ]
 
+                # --------------------------------------------------
                 # Evaluate tool selection
+                # --------------------------------------------------
+
                 selection_accuracy = (
                     tool_selection_accuracy(
                         expected_tools,
@@ -124,30 +140,63 @@ def run_evaluation():
                     f"{selection_accuracy * 100:.2f}%"
                 )
 
-                # Execute generated plan
-                execution_history = (
-                    controller.execute_plan(plan)
+                # --------------------------------------------------
+                # Execute the generated plan
+                # --------------------------------------------------
+
+                execution_result = controller.execute_plan(
+                    plan
                 )
 
-                # Determine task status
+                # AgentController returns a dictionary.
+                # Extract the execution history from that dictionary.
+
+                if isinstance(execution_result, dict):
+
+                    execution_history = execution_result.get(
+                        "execution_history",
+                        []
+                    )
+
+                    task_status = execution_result.get(
+                        "overall_status",
+                        "failed"
+                    )
+
+                else:
+
+                    # Backward compatibility if a list is returned.
+                    execution_history = execution_result
+
+                    task_status = "failed"
+
+                # Confirm task success using actual step outcomes.
+                # Do not mark an incomplete plan as successful.
+
                 task_status = (
                     "success"
-                    if len(execution_history) == len(plan.steps)
-                    and all(
-                        step["status"] == "success"
-                        for step in execution_history
+                    if (
+                        len(execution_history) == len(plan.steps)
+                        and len(execution_history) > 0
+                        and all(
+                            step.get("status") == "success"
+                            for step in execution_history
+                        )
                     )
                     else "failed"
                 )
 
-                # Extract verification and recovery details
+                # --------------------------------------------------
+                # Extract verification and recovery information
+                # --------------------------------------------------
+
                 for step in execution_history:
 
                     attempts = step.get("attempts", 1)
 
                     evaluated_steps.append({
 
-                        "tool": step["tool"],
+                        "tool": step.get("tool", "unknown"),
 
                         "verified": step.get(
                             "verification", {}
@@ -155,12 +204,12 @@ def run_evaluation():
 
                         "initial_failure": (
                             attempts > 1
-                            or step["status"] == "failed"
+                            or step.get("status") == "failed"
                         ),
 
                         "recovered": (
                             attempts > 1
-                            and step["status"] == "success"
+                            and step.get("status") == "success"
                         )
 
                     })
@@ -174,11 +223,18 @@ def run_evaluation():
 
                 task_status = "failed"
 
+            # ------------------------------------------------------
+            # Calculate execution duration
+            # ------------------------------------------------------
+
             duration = (
                 time.perf_counter() - start_time
             )
 
+            # ------------------------------------------------------
             # Store evaluation record
+            # ------------------------------------------------------
+
             record = {
 
                 "test_id": test_case["id"],
@@ -219,12 +275,18 @@ def run_evaluation():
 
         controller.close()
 
-    # Calculate performance metrics
+    # ==========================================================
+    # 4. CALCULATE PERFORMANCE METRICS
+    # ==========================================================
+
     metrics = calculate_metrics(
         evaluation_records
     )
 
-    # Prepare evaluation report
+    # ==========================================================
+    # 5. PREPARE EVALUATION REPORT
+    # ==========================================================
+
     evaluation_report = {
 
         "evaluation_date": datetime.now().isoformat(),
@@ -241,7 +303,10 @@ def run_evaluation():
 
     }
 
-    # Save results as JSON
+    # ==========================================================
+    # 6. SAVE RESULTS AS JSON
+    # ==========================================================
+
     with open(
         RESULTS_PATH,
         "w",
@@ -254,7 +319,10 @@ def run_evaluation():
             indent=4
         )
 
-    # Display evaluation summary
+    # ==========================================================
+    # 7. DISPLAY EVALUATION SUMMARY
+    # ==========================================================
+
     print("\nEVALUATION SUMMARY")
     print("=" * 55)
 
@@ -275,11 +343,18 @@ def run_evaluation():
     print("\nResults saved to:")
     print(RESULTS_PATH)
 
-    # Generate performance visualization
+    # ==========================================================
+    # 8. GENERATE PERFORMANCE CHART
+    # ==========================================================
+
     generate_chart(metrics)
 
     return evaluation_report
 
+
+# ==========================================================
+# 9. GENERATE PERFORMANCE VISUALIZATION
+# ==========================================================
 
 def generate_chart(metrics):
 
@@ -307,7 +382,7 @@ def generate_chart(metrics):
     )
 
     plt.title(
-        "Desktop Agent Performance Evaluation"
+        "Nexus Desktop Agent Performance Evaluation"
     )
 
     plt.ylabel("Performance (%)")
@@ -335,6 +410,10 @@ def generate_chart(metrics):
     print("\nPerformance chart saved to:")
     print(CHART_PATH)
 
+
+# ==========================================================
+# 10. MAIN ENTRY POINT
+# ==========================================================
 
 if __name__ == "__main__":
 

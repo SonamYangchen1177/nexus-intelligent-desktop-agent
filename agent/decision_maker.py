@@ -162,13 +162,32 @@ class AgentController:
 
                 try:
 
-                    # Execute selected tool
+                    # ------------------------------------------
+                    # 1. EXECUTE SELECTED TOOL
+                    # ------------------------------------------
+
                     result = self.executor.execute_tool(
                         step.tool,
                         step.parameters
                     )
 
-                    # Check tool-level success
+                    # ------------------------------------------
+                    # 2. APPLY ADAPTIVE BEHAVIOUR
+                    # ------------------------------------------
+
+                    # Adapt the result before checking failure.
+                    # This allows Nexus to handle known situations,
+                    # such as reusing an existing folder.
+
+                    result = self.adaptation.adapt_result(
+                        step.tool,
+                        result
+                    )
+
+                    # ------------------------------------------
+                    # 3. CHECK TOOL-LEVEL SUCCESS
+                    # ------------------------------------------
+
                     if isinstance(result, dict):
 
                         if result.get("success") is False:
@@ -180,13 +199,10 @@ class AgentController:
                                 )
                             )
 
-                    # Apply adaptive behaviour
-                    result = self.adaptation.adapt_result(
-                        step.tool,
-                        result
-                    )
+                    # ------------------------------------------
+                    # 4. VERIFY ACTUAL EXECUTION RESULT
+                    # ------------------------------------------
 
-                    # Verify actual execution result
                     verification = self.verifier.verify(
                         step.tool,
                         result
@@ -210,6 +226,10 @@ class AgentController:
 
                     break
 
+                # ----------------------------------------------
+                # 5. ERROR HANDLING AND RECOVERY
+                # ----------------------------------------------
+
                 except Exception as error:
 
                     error_type = (
@@ -224,6 +244,9 @@ class AgentController:
 
                     print("Error:", error)
                     print("Error type:", error_type)
+
+                    # Check whether the failed operation
+                    # should be retried.
 
                     if self.recovery.should_retry(
                         error,
@@ -246,6 +269,7 @@ class AgentController:
 
                         continue
 
+                    # No more retries available.
                     status = "failed"
 
                     result = {
@@ -299,7 +323,7 @@ class AgentController:
             print("Status:", status)
             print("Verification:", verification)
 
-            # Stop execution if a step fails
+            # Stop execution if a step fails.
             if status == "failed":
 
                 logger.error(
