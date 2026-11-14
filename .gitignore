@@ -1,0 +1,43 @@
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+
+# IDE settings
+.vscode/
+.idea/
+
+# Operating system files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+logs/
+*.log
+
+# Local database and memory
+memory/*.db
+memory/*.sqlite
+memory/*.sqlite3
+
+# Generated reports
+reports/*
+
+# Workspace files
+workspace/*
+!workspace/.gitkeep
+
+# Temporary files
+*.tmp
+*.bak

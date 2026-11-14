@@ -1,0 +1,103 @@
+
+[
+    {
+        "id": 1,
+        "goal": "Find all files in the workspace.",
+        "expected_tools": ["search_files"]
+    },
+    {
+        "id": 2,
+        "goal": "Find all Python files in the workspace.",
+        "expected_tools": ["search_files"]
+    },
+    {
+        "id": 3,
+        "goal": "Find all PDF files in the workspace.",
+        "expected_tools": ["search_files"]
+    },
+    {
+        "id": 4,
+        "goal": "Create a folder called Research.",
+        "expected_tools": ["create_folder"]
+    },
+    {
+        "id": 5,
+        "goal": "Create a folder called Reports.",
+        "expected_tools": ["create_folder"]
+    },
+    {
+        "id": 6,
+        "goal": "Create a folder called Assignments.",
+        "expected_tools": ["create_folder"]
+    },
+    {
+        "id": 7,
+        "goal": "Find text files in the workspace and generate a report.",
+        "expected_tools": ["search_files", "generate_report"]
+    },
+    {
+        "id": 8,
+        "goal": "Find Python files and generate a report about them.",
+        "expected_tools": ["search_files", "generate_report"]
+    },
+    {
+        "id": 9,
+        "goal": "Create a folder called Project and verify that it exists.",
+        "expected_tools": ["create_folder", "verify_files"]
+    },
+    {
+        "id": 10,
+        "goal": "Create a folder called Data and verify that it exists.",
+        "expected_tools": ["create_folder", "verify_files"]
+    },
+    {
+        "id": 11,
+        "goal": "Find CSV files and generate a report.",
+        "expected_tools": ["search_files", "generate_report"]
+    },
+    {
+        "id": 12,
+        "goal": "Find image files in the workspace.",
+        "expected_tools": ["search_files"]
+    },
+    {
+        "id": 13,
+        "goal": "Find DOCX files in the workspace.",
+        "expected_tools": ["search_files"]
+    },
+    {
+        "id": 14,
+        "goal": "Create a folder called Documents and verify it.",
+        "expected_tools": ["create_folder", "verify_files"]
+    },
+    {
+        "id": 15,
+        "goal": "Find files containing assignment in their names.",
+        "expected_tools": ["search_files"]
+    },
+    {
+        "id": 16,
+        "goal": "Find text files and create a summary report.",
+        "expected_tools": ["search_files", "generate_report"]
+    },
+    {
+        "id": 17,
+        "goal": "Find Excel files in the workspace.",
+        "expected_tools": ["search_files"]
+    },
+    {
+        "id": 18,
+        "goal": "Create a folder called Backup and verify its existence.",
+        "expected_tools": ["create_folder", "verify_files"]
+    },
+    {
+        "id": 19,
+        "goal": "Find JSON files and generate a report.",
+        "expected_tools": ["search_files", "generate_report"]
+    },
+    {
+        "id": 20,
+        "goal": "Find all files and generate a report of the results.",
+        "expected_tools": ["search_files", "generate_report"]
+    }
+]
